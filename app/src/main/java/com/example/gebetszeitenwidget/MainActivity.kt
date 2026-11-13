@@ -3,11 +3,13 @@ package com.example.gebetszeitenwidget
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.RemoteViews
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -27,6 +29,7 @@ class MainActivity : ComponentActivity() {
         val inputCity = findViewById<EditText>(R.id.input_field_city)
         val inputURL = findViewById<EditText>(R.id.input_field_url)
         val btnApply = findViewById<Button>(R.id.btn_apply)
+        val btnDeleteDb = findViewById<Button>(R.id.btn_delete_db)
         recyclerView.layoutManager = LinearLayoutManager(this)
         val context: Context = applicationContext
         val sharedPreferences =
@@ -36,7 +39,6 @@ class MainActivity : ComponentActivity() {
 
         // Beispiel-Daten
         lifecycleScope.launch {
-            //db.prayingCityDao().deleteAllCities()
             dataList = db.prayingCityDao().allPrayingCities().map { it.city }.toMutableList()
 
             // Adapter zuweisen und Klick-Verhalten definieren
@@ -60,20 +62,34 @@ class MainActivity : ComponentActivity() {
             btnApply.setOnClickListener {
                 lifecycleScope.launch {
                     val regionId = loadRegionId(inputURL.text.toString())
-                    db.prayingCityDao().insert(
-                        PrayingCity(
-                            city = inputCity.text.toString(),
-                            regionId = regionId
+                    if (regionId != null) {
+                        db.prayingCityDao().insert(
+                            PrayingCity(
+                                city = inputCity.text.toString(),
+                                regionId = regionId
+                            )
                         )
-                    )
-                    dataList.add(inputCity.text.toString())
+                        dataList.add(inputCity.text.toString())
+                        adapter.updateList()
+                    }else {
+                        Toast.makeText(context, "Could not add city!", Toast.LENGTH_SHORT).show()
+
+                        // button jsons delete
+                        // sync button funktionlaität
+                        // alte monate löschen
+                    }
+                }
+            }
+            btnDeleteDb.setOnClickListener {
+                lifecycleScope.launch {
+                    db.prayingCityDao().deleteAllCities()
                     adapter.updateList()
                 }
             }
         }
     }
 
-    private suspend fun loadRegionId(url: String): String {
+    private suspend fun loadRegionId(url: String): String? {
         return withContext(Dispatchers.IO) {
             try {
                 // 1. Webseite laden
@@ -109,7 +125,7 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            return@withContext "regionId not found"
+            return@withContext null
         }
     }
 
