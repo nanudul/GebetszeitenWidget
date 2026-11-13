@@ -12,7 +12,6 @@ import android.os.SystemClock
 import android.view.View
 import android.widget.RemoteViews
 import androidx.annotation.RequiresPermission
-import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,6 +28,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.io.File
+import androidx.core.graphics.toColorInt
 
 
 class GebetszeitenWidgetProvider : AppWidgetProvider() {
@@ -55,7 +55,6 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             appWidgetManager: AppWidgetManager,
             appWidgetId: Int
         ) {
-            val gson = Gson()
             val sharedPreferences =
                 context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
             var views = RemoteViews(context.packageName, R.layout.gebetszeiten_widget)
@@ -65,7 +64,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             createIntents(context, views)
 
             val current = LocalDate.now()
-            val jsonThisMonth = loadJsonFromFile(context, current.monthValue.toString() + "-" + current.year.toString() + "-" + sharedPreferences.getString("city", "notFound"))
+            var jsonThisMonth = loadJsonFromFile(context, current.monthValue.toString() + "-" + current.year.toString() + "-" + sharedPreferences.getString("city", "notFound"))
             var jsonNextMonth: String?
             if (current.monthValue == 12){
                 jsonNextMonth = loadJsonFromFile(context, "1-" + (current.year+1).toString() + "-" + sharedPreferences.getString("city", "notFound"))
@@ -74,28 +73,33 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             }
 
             myStaticScope.launch {
-                if (jsonThisMonth == null || jsonNextMonth == null){//LocalDate.now().dayOfMonth // wenn dieser monat und dieser monat+1 datei noch nicht da, dann holen + wenn abbruch dann button rot werden lassen
-
-                    //sharedPreferences.edit().putString("prayingTimes", jsonString).apply()
-
-                    val jsonCurrentMonth = gson.toJson(getPrayingTimes(context, current.monthValue, current.year))
-                    saveJsonToFile(context, jsonCurrentMonth, current.monthValue.toString() + "-" + current.year.toString() + "-" + sharedPreferences.getString("city", "notFound"))
+                if (jsonThisMonth == "null") {
+                    jsonThisMonth = getPrayingTimes(context, current.monthValue, current.year, 0, views)
+                    saveJsonToFile(
+                        context,
+                        jsonThisMonth,
+                        current.monthValue.toString() + "-" + current.year.toString() + "-" + sharedPreferences.getString(
+                            "city",
+                            "notFound"
+                        )
+                    )
+                }
+                if (jsonNextMonth == "null" && current.dayOfMonth >= 27){
                     if (current.monthValue == 12){
-                        val jsonNextMonth = gson.toJson(getPrayingTimes(context, 1, current.year+1))
-                        saveJsonToFile(context, jsonNextMonth, "1-" + (current.year+1).toString() + "-" + sharedPreferences.getString("city", "notFound"))
+                        val jsonNextMonth_temp = getPrayingTimes(context, 1, current.year+1, 0, views)
+                        saveJsonToFile(context, jsonNextMonth_temp, "1-" + (current.year+1).toString() + "-" + sharedPreferences.getString("city", "notFound"))
+                        jsonNextMonth = jsonNextMonth_temp
                     } else {
-                        val jsonNextMonth = gson.toJson(getPrayingTimes(context, current.monthValue+1, current.year))
-                        saveJsonToFile(context, jsonNextMonth, (current.monthValue+1).toString() + "-" + current.year.toString() + "-" + sharedPreferences.getString("city", "notFound"))
+                        val jsonNextMonth_temp = getPrayingTimes(context, current.monthValue+1, current.year, 0 ,views)
+                        saveJsonToFile(context, jsonNextMonth_temp, (current.monthValue+1).toString() + "-" + current.year.toString() + "-" + sharedPreferences.getString("city", "notFound"))
+                        jsonNextMonth = jsonNextMonth_temp
                     }
                 }
 
-                // Auslesen von sharedPreferences
-                val geladenerJsonPrayingTimes = sharedPreferences.getString("prayingTimes", null)
-                val geladenePrayingTimes = if (geladenerJsonPrayingTimes != null) {
-                    gson.fromJson(geladenerJsonPrayingTimes, Array<String>::class.java)
-                } else {
-                    arrayOf("")
-                }
+
+
+                // Auslesen von Gebetszeiten
+                val geladenePrayingTimes = parseJsonData(context, jsonThisMonth, current.dayOfMonth)
 
                 val prayingIndex = calculatePrayingTime(geladenePrayingTimes)
                 views.setTextViewText(R.id.prayer_now_or_next, "Now: ")
@@ -126,13 +130,15 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        fun saveJsonToFile(context: Context, jsonString: String, fileName: String) {
+        fun saveJsonToFile(context: Context, jsonString: String?, fileName: String) {
             try {
                 // Erstellt/Öffnet die Datei im internen Verzeichnis der App
                 val file = File(context.filesDir, fileName)
 
                 // Schreibt den JSON-Text in die Datei
-                file.writeText(jsonString)
+                if (jsonString != null) {
+                    file.writeText(jsonString)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -144,11 +150,11 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                 if (file.exists()) {
                     file.readText() // Liest den gesamten Inhalt als String aus
                 } else {
-                    null // Datei existiert noch nicht
+                    "null" // Datei existiert noch nicht
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                null
+                "null"
             }
         }
         fun createIntents(context: Context, views: RemoteViews){
@@ -251,16 +257,12 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             views.setChronometer(R.id.timer, triggerTime, null, true)
 
             if (edgeCaseOtherTriggerTime) {
-                // Auslesen von sharedPreferences
-                val gson = Gson()
+                // Auslesen von Gebetszeiten
                 val sharedPreferences =
                     context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
-                val geladenerJsonPrayingTimes = sharedPreferences.getString("prayingTimes", null)
-                val geladenePrayingTimes = if (geladenerJsonPrayingTimes != null) {
-                    gson.fromJson(geladenerJsonPrayingTimes, Array<String>::class.java)
-                } else {
-                    arrayOf("")
-                }
+                val current = LocalDate.now()
+                var jsonThisMonth = loadJsonFromFile(context, current.monthValue.toString() + "-" + current.year.toString() + "-" + sharedPreferences.getString("city", "notFound"))
+                val geladenePrayingTimes = parseJsonData(context, jsonThisMonth, current.dayOfMonth)
                 triggerTime = SystemClock.elapsedRealtime() + Duration.between(
                     currentTime, LocalDateTime.of(
                         LocalDate.now().plusDays(1),
@@ -300,7 +302,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             return -1
         }
 
-        suspend fun getPrayingTimes(context: Context, month: Int, year: Int): String? {
+        suspend fun getPrayingTimes(context: Context, month: Int, year: Int, iterator: Int, views: RemoteViews): String? {
             return withContext(Dispatchers.IO) {
                 val client = OkHttpClient.Builder()
                     .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
@@ -333,20 +335,30 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                     .build()
 
                 // 4. Request im Hintergrund ausführen
-                val responseData = try {
+                var responseData: String? = "null"
+                try {
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             // Handle or throw when the server returns an error code (e.g., 404, 500)
                             throw java.io.IOException("Unexpected HTTP response: ${response.code}")
                         }
-                        response.body?.string()
+                        responseData = response.body?.string()
+                        views.setInt(R.id.btn_sync, "setColorFilter", "#000000".toColorInt())
                     }
                 } catch (e: java.net.SocketTimeoutException) {
                     // Log the timeout or fall back to cached prayer times
-                    null
+                    if (iterator < 5) {
+                        getPrayingTimes(context, month, year, iterator + 1, views)
+                    }else{
+                        views.setInt(R.id.btn_sync, "setColorFilter", "#8B0000".toColorInt())
+                    }
                 } catch (e: java.io.IOException) {
                     // Handle other network/IO errors (e.g., no internet connection)
-                    null
+                    if (iterator < 5) {
+                        getPrayingTimes(context, month, year, iterator + 1, views)
+                    }else {
+                        views.setInt(R.id.btn_sync, "setColorFilter", "#8B0000".toColorInt())
+                    }
                 }
                 return@withContext responseData//parseJsonData(context, responseData, dayOfMonth)
             }
@@ -381,15 +393,11 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
         }
 
         fun prayedBehavior(context: Context, views: RemoteViews): RemoteViews{
-            // Auslesen von sharedPreferences
-            val gson = Gson()
+            // Auslesen von Gebetszeiten
             val sharedPreferences = context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
-            val geladenerJsonPrayingTimes = sharedPreferences.getString("prayingTimes", null)
-            val geladenePrayingTimes = if (geladenerJsonPrayingTimes != null) {
-                gson.fromJson(geladenerJsonPrayingTimes, Array<String>::class.java)
-            } else {
-                arrayOf("")
-            }
+            val current = LocalDate.now()
+            var jsonThisMonth = loadJsonFromFile(context, current.monthValue.toString() + "-" + current.year.toString() + "-" + sharedPreferences.getString("city", "notFound"))
+            val geladenePrayingTimes = parseJsonData(context, jsonThisMonth, current.dayOfMonth)
 
             val isChecked = sharedPreferences.getBoolean("prayed", false)
 
