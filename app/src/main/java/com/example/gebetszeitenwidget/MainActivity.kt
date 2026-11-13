@@ -73,9 +73,6 @@ class MainActivity : ComponentActivity() {
                         adapter.updateList()
                     }else {
                         Toast.makeText(context, "Could not add city!", Toast.LENGTH_SHORT).show()
-
-                        // button jsons delete
-                        // alte monate löschen
                     }
                 }
             }

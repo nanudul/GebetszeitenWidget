@@ -535,6 +535,13 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                         }
                         makeTimer(geladenePrayingTimes.get(prayingIndex + 1), context, views, false)
                     }
+                    if (prayingIndex == 1){
+                        views.setTextViewText(R.id.prayer_now_or_next, "Next: ")
+                        views.setTextViewText(
+                            R.id.prayer_name,
+                            prayingNames.get(prayingIndex + 1)
+                        )
+                    }
                 }
             }
             return views
