@@ -75,7 +75,6 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(context, "Could not add city!", Toast.LENGTH_SHORT).show()
 
                         // button jsons delete
-                        // sync button funktionlaität
                         // alte monate löschen
                     }
                 }

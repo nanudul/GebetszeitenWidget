@@ -18,7 +18,7 @@
             android:id="@+id/city"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Stadt"
+            android:text="City not found"
             android:textAlignment="center"
             android:textSize="20sp"
             android:layout_weight="4"/>
@@ -29,6 +29,8 @@
             android:layout_height="24dp"
             android:layout_weight="1"
             android:backgroundTint="@color/white"
+            android:visibility="invisible"
+            android:tint="@android:color/holo_red_dark"
             android:src="@drawable/sync" />
 
     </LinearLayout>
@@ -53,7 +55,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Next: "
+                android:text="Loading "
                 android:textAlignment="textEnd"
                 android:textSize="15sp" />
 
@@ -62,7 +64,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Maghrib"
+                android:text="failed"
                 android:textAlignment="textStart"
                 android:textSize="15sp" />
 
