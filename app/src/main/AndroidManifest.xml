@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" >
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.GebetszeitenWidget">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.GebetszeitenWidget"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver
+            android:name=".GebetszeitenWidgetProvider"
+            android:exported="true">
+
+            <!-- Intent-Filter, damit das System weiß, dass es sich um ein App-Widget handelt -->
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <!-- Falls du eine eigene Action hast, kannst du sie hier ebenfalls hinzufügen -->
+                <action android:name="ACTION_PRAYED" />
+                <action android:name="ACTION_SYNC" />
+                <action android:name="ACTION_SETTINGS" />
+            </intent-filter>
+
+            <!-- Verweis auf die Metadaten-XML aus Schritt 1 -->
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/gebetszeiten_widget_info" />
+        </receiver>
+        <receiver android:name=".WidgetUpdateReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="ACTION_TIMER_EXPIRED" />
+                <action android:name="ACTION_SETTINGS_CHANGED" />
+                <action android:name="ACTION_PRAYED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

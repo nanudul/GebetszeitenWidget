@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="top|center"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:layout_marginTop="35dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:weightSum="5">
+
+        <GridLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:rowCount="2"
+            android:layout_weight="1">
+
+            <EditText
+                android:id="@+id/input_field_city"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Stadt eingeben..."
+                android:inputType="text" />
+
+            <EditText
+                android:id="@+id/input_field_url"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="URL eingeben..."
+                android:inputType="text" />
+        </GridLayout>
+
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_weight="4">
+
+            <Button
+                android:id="@+id/btn_apply"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="add" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Debugger -->
+    <!--<TextView
+        android:id="@+id/debugger"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="Hiiiiiiiiii"/>-->
+</LinearLayout>
