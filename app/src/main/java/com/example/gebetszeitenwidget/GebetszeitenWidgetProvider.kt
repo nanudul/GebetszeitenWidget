@@ -28,7 +28,6 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.io.File
-import androidx.core.graphics.toColorInt
 
 
 class GebetszeitenWidgetProvider : AppWidgetProvider() {
@@ -60,6 +59,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             var views = RemoteViews(context.packageName, R.layout.gebetszeiten_widget)
 
             views.setTextViewText(R.id.city, sharedPreferences.getString("city", "Stadt"))
+            // checkbox is only visible if syncing has worked
             views.setViewVisibility(R.id.checkbox_gebetet, View.VISIBLE)
             views.setViewVisibility(R.id.btn_sync, View.INVISIBLE)
 
@@ -74,6 +74,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                 )
             )
             var jsonNextMonth: String?
+            // if month is december get json from january next year
             if (current.monthValue == 12) {
                 jsonNextMonth = loadJsonFromFile(
                     context,
@@ -93,9 +94,16 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             }
 
             myStaticScope.launch {
+                // If no json from this month is available load it from the website
                 if (jsonThisMonth == "null") {
                     jsonThisMonth =
-                        getPrayingTimes(context, current.monthValue, current.year, 0, views)
+                        getPrayingTimesAsJsonString(
+                            context,
+                            current.monthValue,
+                            current.year,
+                            0,
+                            views
+                        )
                     saveJsonToFile(
                         context,
                         jsonThisMonth,
@@ -105,10 +113,12 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                         )
                     )
                 }
+                // get json from next month if the day is later than the 27th
                 if (jsonNextMonth == "null" && current.dayOfMonth >= 27) {
+                    // next year case
                     if (current.monthValue == 12) {
                         val jsonNextMonth_temp =
-                            getPrayingTimes(context, 1, current.year + 1, 0, views)
+                            getPrayingTimesAsJsonString(context, 1, current.year + 1, 0, views)
                         saveJsonToFile(
                             context,
                             jsonNextMonth_temp,
@@ -120,7 +130,13 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                         jsonNextMonth = jsonNextMonth_temp
                     } else {
                         val jsonNextMonth_temp =
-                            getPrayingTimes(context, current.monthValue + 1, current.year, 0, views)
+                            getPrayingTimesAsJsonString(
+                                context,
+                                current.monthValue + 1,
+                                current.year,
+                                0,
+                                views
+                            )
                         saveJsonToFile(
                             context,
                             jsonNextMonth_temp,
@@ -134,9 +150,11 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                 }
 
 
-                // Auslesen von Gebetszeiten
-                val geladenePrayingTimes = parseJsonData(context, jsonThisMonth, current.dayOfMonth)
+                // get praying times
+                val geladenePrayingTimes =
+                    parseJsonDataToPrayingTimesArray(context, jsonThisMonth, current.dayOfMonth)
 
+                // if nothing was loaded display this
                 if (geladenePrayingTimes.get(0) == "failed") {
                     views.setTextViewText(R.id.prayer_now_or_next, "Loading ")
                     views.setTextViewText(R.id.prayer_name, "failed")
@@ -146,28 +164,24 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                     views.setViewVisibility(R.id.checkbox_gebetet, View.GONE)
                     appWidgetManager.updateAppWidget(appWidgetId, views)
                 } else {
-                    val prayingIndex = calculatePrayingTime(geladenePrayingTimes)
+                    val prayingIndex = calculatePrayingIndex(geladenePrayingTimes)
                     views.setTextViewText(R.id.prayer_now_or_next, "Now: ")
                     views.setTextViewText(R.id.prayer_name, prayingNames.get(prayingIndex))
                     views.setTextViewText(
                         R.id.prayer_time,
-                        geladenePrayingTimes.get(prayingIndex + 1)
+                        geladenePrayingTimes.get(prayingIndex + 1) + " - " + geladenePrayingTimes.get(
+                            prayingIndex + 2
+                        )
                     )
 
-                    when (prayingIndex) {
-                        // Sonderfall: Sunrise übersprungen
-                        1 -> {
-                            views.setTextViewText(
-                                R.id.prayer_name,
-                                prayingNames.get(prayingIndex + 1)
-                            )
-                            views.setTextViewText(R.id.prayer_now_or_next, "Next: ")
-                        }
-                        // Sonderfall: Bei jetzigem Isha Fajr-Beginn und Endzeit angezeigen
-                        5 -> views.setTextViewText(
+                    // Special case: skip sunrise
+                    if (prayingIndex == 1) {
+                        views.setTextViewText(R.id.prayer_name, prayingNames.get(prayingIndex + 1))
+                        views.setTextViewText(R.id.prayer_now_or_next, "Next: ")
+                        views.setTextViewText(
                             R.id.prayer_time,
-                            geladenePrayingTimes.get(prayingIndex + 1) + " - " + geladenePrayingTimes.get(
-                                prayingIndex + 2
+                            geladenePrayingTimes.get(prayingIndex + 2) + " - " + geladenePrayingTimes.get(
+                                prayingIndex + 3
                             )
                         )
                     }
@@ -176,7 +190,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
 
                     views = prayedBehavior(context, views)
 
-                    // Widget aktualisieren
+                    // Update widget
                     appWidgetManager.updateAppWidget(appWidgetId, views)
                 }
             }
@@ -184,10 +198,10 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
 
         fun saveJsonToFile(context: Context, jsonString: String?, fileName: String) {
             try {
-                // Erstellt/Öffnet die Datei im internen Verzeichnis der App
+                // opens the file in the internal storage of the app
                 val file = File(context.filesDir, fileName)
 
-                // Schreibt den JSON-Text in die Datei
+                // Writes the json into the file
                 if (jsonString != null) {
                     file.writeText(jsonString)
                 }
@@ -200,9 +214,9 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             return try {
                 val file = File(context.filesDir, fileName)
                 if (file.exists()) {
-                    file.readText() // Liest den gesamten Inhalt als String aus
+                    file.readText() // Reads the file as a string
                 } else {
-                    "null" // Datei existiert noch nicht
+                    "null" // File does not exist
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -211,20 +225,22 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
         }
 
         fun createIntents(context: Context, views: RemoteViews) {
-            // 1. Erstellen Sie einen Intent, der an Ihren Provider gesendet wird
+            // Intent so that the app does not open if you click anywhere on the widget
+            // 1. Create an intent that is sent to a provider
             val dummyIntent = Intent(context, GebetszeitenWidgetProvider::class.java).apply {
                 action = "ACTION_DUMMY_CLICK"
             }
-            // 2. Erstellen Sie einen getBroadcast-PendingIntent (wichtig: KEIN getActivity!)
+            // 2. Create getBroadcast-PendingIntent
             val dummyPendingIntent = PendingIntent.getBroadcast(
                 context,
                 0,
                 dummyIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-
+            // 3. Set on-click pendingIntent
             views.setOnClickPendingIntent(R.id.outerLayer, dummyPendingIntent)
 
+            // Intent for the sync button
             val syncIntent = Intent(context, GebetszeitenWidgetProvider::class.java).apply {
                 action = "ACTION_SYNC"
             }
@@ -236,6 +252,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.btn_sync, syncPendingIntent)
 
+            // Intent for the settings button
             val settingsIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
@@ -247,18 +264,18 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.btn_settings, settingsPendingIntent)
 
-            // 1. Intent für den Klick erstellen
+            // Intent for the prayed button
             val intentPrayed = Intent(context, GebetszeitenWidgetProvider::class.java).apply {
                 action = "ACTION_PRAYED"
             }
-            // 2. PendingIntent für Widgets erzeugen (Wichtig: FLAG_IMMUTABLE oder FLAG_MUTABLE)
+
             val pendingIntentPrayed = PendingIntent.getBroadcast(
                 context,
                 0,
                 intentPrayed,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
             )
-            // 3. Dem Button den Klick-Listener zuweisen
+
             views.setOnCheckedChangeResponse(
                 R.id.checkbox_gebetet,
                 RemoteViews.RemoteResponse.fromPendingIntent(pendingIntentPrayed)
@@ -270,15 +287,14 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             prayingTime: String,
             context: Context,
             views: RemoteViews,
-            edgeCaseOtherTriggerTime: Boolean
+            ishaNextDayTimer: Boolean
         ) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
-            // Intent, der an unseren Receiver geschickt wird
+            // Intent that gets send to the receiver
             val intent = Intent(context, WidgetUpdateReceiver::class.java).apply {
                 action = "ACTION_TIMER_EXPIRED"
             }
-
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
                 0,
@@ -286,6 +302,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
+            // Calculate Timer time
             val currentTime = LocalDateTime.now()
             val givenPrayingTime = LocalDateTime.of(
                 LocalDate.now(),
@@ -302,15 +319,14 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                 durationInMillis =
                     Duration.between(currentTime, givenPrayingTimeNextDay).seconds * 1000
             }
-
-            // Zielzeitpunkt berechnen (Aktuelle Zeit + Dauer des Timers)
-            // ELAPSED_REALTIME_WAKEUP weckt das Gerät auch aus dem Energiesparmodus auf
+            // Add Timer time to the current time
             var triggerTime = SystemClock.elapsedRealtime() + durationInMillis
 
+            // Set timer visually
             views.setChronometer(R.id.timer, triggerTime, null, true)
 
-            if (edgeCaseOtherTriggerTime) {
-                // Auslesen von Gebetszeiten
+            // If it is isha now, set the timer accordingly to the next day
+            if (ishaNextDayTimer) {
                 val sharedPreferences =
                     context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
                 val current = LocalDate.now()
@@ -321,7 +337,8 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                         "CityNotFound"
                     )
                 )
-                val geladenePrayingTimes = parseJsonData(context, jsonThisMonth, current.dayOfMonth)
+                val geladenePrayingTimes =
+                    parseJsonDataToPrayingTimesArray(context, jsonThisMonth, current.dayOfMonth)
                 triggerTime = SystemClock.elapsedRealtime() + Duration.between(
                     currentTime, LocalDateTime.of(
                         LocalDate.now().plusDays(1),
@@ -333,7 +350,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                 ).seconds * 1000
             }
 
-            // Exakten Alarm setzen
+            // Set timer internally
             alarmManager.setExactAndAllowWhileIdle(
                 AlarmManager.ELAPSED_REALTIME_WAKEUP,
                 triggerTime,
@@ -341,13 +358,15 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             )
         }
 
-        fun calculatePrayingTime(prayingTimeArray: Array<String>): Int {
+        fun calculatePrayingIndex(prayingTimeArray: Array<String>): Int {
             val currentTime = LocalDateTime.now()
+            // Go through every praying time and look for the current matching praying time
             prayingTimeArray.forEachIndexed { index, prayingTime ->
                 val givenPrayingTime = LocalDateTime.of(
                     LocalDate.now(),
                     LocalTime.parse(prayingTime, DateTimeFormatter.ofPattern("HH:mm"))
                 )
+                // For the case that it is isha and we need the next day
                 val givenPrayingTimeNextDay = LocalDateTime.of(
                     LocalDate.now().plusDays(1),
                     LocalTime.parse(prayingTime, DateTimeFormatter.ofPattern("HH:mm"))
@@ -361,7 +380,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
             return -1
         }
 
-        suspend fun getPrayingTimes(
+        suspend fun getPrayingTimesAsJsonString(
             context: Context,
             month: Int,
             year: Int,
@@ -373,21 +392,20 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                     .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
                     .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
-                // 1. Die URL des POST-Requests aus dem Netzwerk-Tab
-                //val babenhausen = "10898"
-                //val darmstadt = "11079"
+                // 1. Make url for post request
                 val sharedPreferences =
                     context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
-                val regionId = sharedPreferences.getString("regionId", "11012")
+                val regionId =
+                    sharedPreferences.getString("regionId", "10898") // default is Babenhausen
                 val url =
                     "https://diegebetszeiten.de/wp-content/plugins/salat-times/ajax.php?region=" + regionId + "&calculation_method=diyanet&time_zone=Europe%2FBerlin&time_format=24h&" +
                             "unix_timestamp=" + (System.currentTimeMillis() / 1000).toString() + "&calendar=gregorian&year=" + year.toString() + "&month=" + month.toString() + "&action=get_month&locale=de_DE"
 
-                // 2. Da Content-Length: 0 ist, übergeben wir einen leeren JSON-Body
+                // 2. Because Content-Length is 0, we send an empty JSON-Body
                 val mediaType = "application/json; charset=utf-8".toMediaType()
                 val body = "".toRequestBody(mediaType)
 
-                // 3. Den Request zusammenbauen (inklusive optionaler Header wie Cookies oder User-Agent)
+                // 3. Put together request
                 val request = Request.Builder()
                     .url(url)
                     .post(body)
@@ -399,7 +417,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                     .addHeader("Content-Type", "application/json")
                     .build()
 
-                // 4. Request im Hintergrund ausführen
+                // 4. Execute request in the background
                 var responseData: String? = "null"
                 try {
                     client.newCall(request).execute().use { response ->
@@ -410,25 +428,29 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                         responseData = response.body?.string()
                     }
                 } catch (e: java.net.SocketTimeoutException) {
-                    // Log the timeout or fall back to cached prayer times
+                    // try it 5 times
                     if (iterator < 5) {
-                        getPrayingTimes(context, month, year, iterator + 1, views)
-                    } else {
+                        getPrayingTimesAsJsonString(context, month, year, iterator + 1, views)
+                    } else { // make sync button visible because it didnt work
                         views.setViewVisibility(R.id.btn_sync, View.VISIBLE)
                     }
                 } catch (e: java.io.IOException) {
                     // Handle other network/IO errors (e.g., no internet connection)
                     if (iterator < 5) {
-                        getPrayingTimes(context, month, year, iterator + 1, views)
+                        getPrayingTimesAsJsonString(context, month, year, iterator + 1, views)
                     } else {
                         views.setViewVisibility(R.id.btn_sync, View.VISIBLE)
                     }
                 }
-                return@withContext responseData//parseJsonData(context, responseData, dayOfMonth)
+                return@withContext responseData
             }
         }
 
-        fun parseJsonData(context: Context, jsonString: String?, dayofMonth: Int): Array<String> {
+        fun parseJsonDataToPrayingTimesArray(
+            context: Context,
+            jsonString: String?,
+            dayofMonth: Int
+        ): Array<String> {
             try {
                 val jsonObject =
                     JSONObject(jsonString).getJSONObject("details").getJSONArray("days")
@@ -444,11 +466,14 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                 val isha = jsonObject.get("isha").toString()
                 val nextFajr = jsonObjectNextDay.get("fajr").toString()
                 val nextSunrise = jsonObjectNextDay.get("sunrise").toString()
+
+                // set day of today in sharedPreferences
                 val today = JSONObject(jsonString).getJSONObject("details").getJSONObject("today")
                     .get("day").toString().toInt()
                 val sharedPreferences =
                     context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
                 sharedPreferences.edit().putInt("today", today).apply()
+
                 return arrayOf(fajr, sunrise, dhuhr, asr, maghrib, isha, nextFajr, nextSunrise)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -468,11 +493,12 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                     "notFound"
                 )
             )
-            val geladenePrayingTimes = parseJsonData(context, jsonThisMonth, current.dayOfMonth)
+            val geladenePrayingTimes =
+                parseJsonDataToPrayingTimesArray(context, jsonThisMonth, current.dayOfMonth)
 
             val isChecked = sharedPreferences.getBoolean("prayed", false)
 
-            val prayingIndex = calculatePrayingTime(geladenePrayingTimes)
+            val prayingIndex = calculatePrayingIndex(geladenePrayingTimes)
             run edgeCaseSunrise@{
                 if (isChecked) {
                     if (prayingIndex == 1) {
@@ -535,7 +561,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                         }
                         makeTimer(geladenePrayingTimes.get(prayingIndex + 1), context, views, false)
                     }
-                    if (prayingIndex == 1){
+                    if (prayingIndex == 1) {
                         views.setTextViewText(R.id.prayer_now_or_next, "Next: ")
                         views.setTextViewText(
                             R.id.prayer_name,
@@ -550,26 +576,31 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        // Prüfen, ob unsere Aktion ausgelöst wurde
+        // Check if "ACTION_PRAYED" has happened
         if (intent.action == "ACTION_PRAYED") {
+            // get state of praying checkbox
             val isChecked = intent.getBooleanExtra(RemoteViews.EXTRA_CHECKED, false)
+            // set current state of checkbox
             val sharedPreferences =
                 context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
             sharedPreferences.edit().putBoolean("prayed", isChecked).apply()
+
             var views = RemoteViews(context.packageName, R.layout.gebetszeiten_widget)
             views = prayedBehavior(context, views)
+
+            // update widget
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val thisWidget: ComponentName =
                 ComponentName(context, GebetszeitenWidgetProvider::class.java)
             val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
             appWidgetManager.updateAppWidget(allWidgetIds, views)
         }
+        // Check if "ACTION_SYNC" has happened
         if (intent.action == "ACTION_SYNC") {
+            // update the widget
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val thisWidget = ComponentName(context, GebetszeitenWidgetProvider::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
-
-            // Aktualisierungs-Methode deines WidgetProviders aufrufen
             for (widgetId in appWidgetIds) {
                 updateAppWidget(context, appWidgetManager, widgetId)
             }
