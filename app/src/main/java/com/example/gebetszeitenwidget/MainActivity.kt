@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity() {
                             )
                         )
                         dataList.add(inputCity.text.toString())
+                        inputURL.setText("")
+                        inputCity.setText("")
                         adapter.updateList()
                     }else {
                         Toast.makeText(context, "Could not add city!", Toast.LENGTH_SHORT).show()
