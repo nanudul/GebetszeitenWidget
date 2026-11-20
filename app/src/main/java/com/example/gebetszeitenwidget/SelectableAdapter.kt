@@ -7,13 +7,11 @@ import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.RadioButton
 import android.widget.TextView
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import okhttp3.internal.notify
 
 class SelectableAdapter(
     private val items: MutableList<String>,
@@ -22,14 +20,15 @@ class SelectableAdapter(
     private val onItemSelected: (Int) -> Unit
 ) : RecyclerView.Adapter<SelectableAdapter.ViewHolder>() {
 
-    // Speichert den Index des aktuell ausgewählten Elements (-1 = keins)
+    // Saves the index of the current selected city from the sharedPreferences
     private val sharedPreferences =
         context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
     private var selectedPosition = sharedPreferences.getInt("selectedPosition", -1)
 
-    // Speichert, bei welchem Item der Delete-Button gerade sichtbar ist (-1 = bei keinem)
+    // Saves at which position the delete button is visible (-1 if nothing is selected)
     private var deleteButtonVisiblePosition = -1
 
+    // In this class there are the title and the buttons for one city entry
     inner class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val tvTitle: TextView = view.findViewById(R.id.tvItemTitle)
         val radioButton: RadioButton = view.findViewById(R.id.radioBtn)
@@ -38,77 +37,76 @@ class SelectableAdapter(
         private val myStaticScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
         init {
-            // 1. Normaler Klick-Listener (bleibt wie er war)
+            // Normal click-Listener
             itemView.setOnClickListener {
                 val position = adapterPosition
                 if (position != RecyclerView.NO_POSITION) {
-                    // Wenn ein Delete-Button offen war, diesen beim normalen Klick wieder verstecken
+                    // If a Delete-Button was visible it goes "gone" again with a normal click
                     if (deleteButtonVisiblePosition != -1) {
                         val prevDeletePos = deleteButtonVisiblePosition
                         deleteButtonVisiblePosition = -1
                         notifyItemChanged(prevDeletePos)
-                        //deleteButton.visibility = View.GONE
-                        //radioButton.visibility = View.VISIBLE
                     }
+                    // make new selected city
                     val previousPosition = selectedPosition
                     selectedPosition = position
 
-                    // SharedPreferences direkt im Adapter aktualisieren (optional, falls gewünscht)
-                    sharedPreferences.edit().putInt("selectedPosition", selectedPosition)
-                        .apply()
+                    // SharedPreferences get updated
+                    sharedPreferences.edit().putInt("selectedPosition", selectedPosition).apply()
 
-                    // Aktualisiere nur die betroffenen Elemente für bessere Performance
                     notifyItemChanged(previousPosition)
                     notifyItemChanged(selectedPosition)
 
-                    // Callback an die Activity/Fragment übergeben
+                    // Callback to the Activity
                     onItemSelected(selectedPosition)
                 }
             }
 
-            // 2. NEU: Long-Click-Listener (Gedrückt halten)
+            // Long-Click-Listener
             itemView.setOnLongClickListener {
                 val position = adapterPosition
                 if (position != RecyclerView.NO_POSITION) {
                     val previousDeletePos = deleteButtonVisiblePosition
 
-                    // Toggle: Wenn es bereits offen war, wieder schließen, sonst für dieses Item öffnen
+                    // Toggle: If it was visible it goes "gone" again
                     deleteButtonVisiblePosition =
                         if (deleteButtonVisiblePosition == position) -1 else position
 
-                    // UI aktualisieren (alten Button verstecken, neuen anzeigen)
+                    // Update UI (Select button goes "Gone" and delete button goes visible)
                     if (previousDeletePos != -1) notifyItemChanged(previousDeletePos)
                     notifyItemChanged(position)
-                    // 'true' gibt zurück, dass das Event konsumiert wurde
-                    // (verhindert, dass danach direkt ein normaler Klick ausgelöst wird)
+                    // prohibits that a normal click happens immediately afterward
                     true
                 } else {
                     false
                 }
             }
+
+            // Delete button
             deleteButton.setOnClickListener {
                 val position = adapterPosition
                 if (position != RecyclerView.NO_POSITION) {
-                    // Element aus der Liste löschen
+                    // delete element from list
                     myStaticScope.launch {
                         db.prayingCityDao().deletePrayingCity(
-                            db.prayingCityDao().allPrayingCities().toMutableList()[position]
+                            db.prayingCityDao().getAllPrayingCities().toMutableList()[position]
                         )
                     }
                     items.removeAt(position)
-                    deleteButtonVisiblePosition = -1 // Zurücksetzen
+                    deleteButtonVisiblePosition = -1 // reset
 
-                    // Wenn das gelöschte Element das ausgewählte war, Auswahl zurücksetzen
+                    // If the deleted element was the selected one, set selected element to the first one
                     if (selectedPosition == position) {
-                        selectedPosition = -1
-                        sharedPreferences.edit().putInt("selectedPosition", -1).apply()
-                    } else if (selectedPosition > position) {
-                        selectedPosition-- // Index verschiebt sich nach unten
-                        sharedPreferences.edit().putInt("selectedPosition", selectedPosition)
-                            .apply()
+                        selectedPosition = 0
+                        sharedPreferences.edit().putInt("selectedPosition", 0).apply()
+                    }
+                    // Index is pushed up by one
+                    else if (selectedPosition > position) {
+                        selectedPosition--
+                        sharedPreferences.edit().putInt("selectedPosition", selectedPosition).apply()
                     }
 
-                    // RecyclerView über die Änderung informieren
+                    // update RecyclerView
                     notifyItemRemoved(position)
                     notifyItemRangeChanged(position, items.size)
                 }
@@ -126,10 +124,10 @@ class SelectableAdapter(
         val item = items[position]
         holder.tvTitle.text = item
 
-        // Zustand des RadioButtons basierend auf der Auswahl setzen
+        // Set radio button to selected position
         holder.radioButton.isChecked = (position == selectedPosition)
 
-        // Sichtbarkeit des Delete-Buttons basierend auf dem Zustand steuern
+        // Set buttons visibilities
         if (position == deleteButtonVisiblePosition) {
             holder.deleteButton.visibility = View.VISIBLE
             holder.radioButton.visibility = View.GONE

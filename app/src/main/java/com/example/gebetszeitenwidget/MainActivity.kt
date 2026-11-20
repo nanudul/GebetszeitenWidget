@@ -3,12 +3,9 @@ package com.example.gebetszeitenwidget
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.SharedPreferences
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ImageButton
-import android.widget.RemoteViews
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
@@ -22,54 +19,55 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // set main layout
         setContentView(R.layout.activity_main)
         val db = AppDatabase.getDatabase(applicationContext)
 
-        val recyclerView = findViewById<RecyclerView>(R.id.recyclerView)
+        val recyclerView = findViewById<RecyclerView>(R.id.recyclerView) // This is the selectable list
+        recyclerView.layoutManager = LinearLayoutManager(this)
         val inputCity = findViewById<EditText>(R.id.input_field_city)
         val inputURL = findViewById<EditText>(R.id.input_field_url)
         val btnApply = findViewById<Button>(R.id.btn_apply)
         val btnDeleteDb = findViewById<Button>(R.id.btn_delete_db)
-        recyclerView.layoutManager = LinearLayoutManager(this)
-        val context: Context = applicationContext
-        val sharedPreferences =
-            context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
 
+        val context: Context = applicationContext
+        val sharedPreferences = context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
         var dataList: MutableList<String>
 
-        // Beispiel-Daten
         lifecycleScope.launch {
-            dataList = db.prayingCityDao().allPrayingCities().map { it.city }.toMutableList()
+            // Get the saved cities in the database
+            dataList = db.prayingCityDao().getAllPrayingCities().map { it.city }.toMutableList()
 
-            // Adapter zuweisen und Klick-Verhalten definieren
+            // Assign adapter and define click behavior
             val adapter = SelectableAdapter(
                 dataList,
                 context,
                 db
-            ) { selectedIndex ->
+            ) { selectedIndex -> // This happens when a new city is selected in the app
                 val selectedItem = dataList[selectedIndex]
+                // Set selected position and city
                 sharedPreferences.edit().putInt("selectedPosition", selectedIndex).apply()
                 sharedPreferences.edit().putString("city", selectedItem).apply()
                 lifecycleScope.launch {
+                    // Set region id and update widget
                     val regionId = db.prayingCityDao().getRegionId(selectedItem)
                     sharedPreferences.edit().putString("regionId", regionId).apply()
                     updateWidget()
                 }
             }
 
+            // Update the adapter
             recyclerView.adapter = adapter
 
             btnApply.setOnClickListener {
                 lifecycleScope.launch {
                     val regionId = loadRegionId(inputURL.text.toString())
                     if (regionId != null) {
-                        db.prayingCityDao().insert(
-                            PrayingCity(
-                                city = inputCity.text.toString(),
-                                regionId = regionId
-                            )
-                        )
+                        // Insert new city into the database
+                        db.prayingCityDao().insert(PrayingCity(city = inputCity.text.toString(), regionId = regionId))
+                        // add new city into the dalalist
                         dataList.add(inputCity.text.toString())
+                        // Empty input fields
                         inputURL.setText("")
                         inputCity.setText("")
                         adapter.updateList()
@@ -90,19 +88,19 @@ class MainActivity : ComponentActivity() {
     private suspend fun loadRegionId(url: String): String? {
         return withContext(Dispatchers.IO) {
             try {
-                // 1. Webseite laden
+                // 1. Load url
                 val doc = Jsoup.connect(url).get()
 
-                // 2. Alle <script>-Tags durchsuchen
+                // 2. Scan all <script>-Tags
                 val scripts = doc.select("script")
                 var variableWert: String? = null
 
                 for (script in scripts) {
                     val scriptText = script.html()
 
-                    // Prüfen, ob das Skript unsere Variable enthält (z. B. "meineVariable = '123'")
+                    // Check if the script has the variables we need
                     if (scriptText.contains("salat_times_widget_settings")) {
-                        // Regex sucht nach dem Variablennamen, gefolgt von = und einem String in Anführungszeichen
+                        // Regex looks for the variable name followed by a : and a string in ""
                         val regex = Regex(""""region"\s*:\s*"([^"]+)"""")
                         val match = regex.find(scriptText)
 
@@ -112,14 +110,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-
                 if (variableWert != null) {
-                    println("Gefundener Variablenwert: $variableWert")
                     return@withContext variableWert
-                } else {
-                    println("Variable im Script-Tag nicht gefunden.")
                 }
-
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -131,10 +124,9 @@ class MainActivity : ComponentActivity() {
         val context: Context = applicationContext
         val appWidgetManager = AppWidgetManager.getInstance(context)
 
-        // Ersetze 'MyWidgetProvider' mit dem Klassennamen deines eigenen Widget-Providers
         val thisWidget = ComponentName(context, GebetszeitenWidgetProvider::class.java)
 
-        // Widget beim AppWidgetManager aktualisieren lassen
+        // Widget get updated by the AppWidgetManager
         val appWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
         for (widgetId in appWidgetIds) {
             GebetszeitenWidgetProvider.updateAppWidget(context, appWidgetManager, widgetId)

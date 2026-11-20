@@ -47,7 +47,7 @@ interface PrayingCityDao {
     suspend fun insert(prayingCity: PrayingCity)
 
     @Query("SELECT * FROM Gebetsorte")
-    suspend fun allPrayingCities(): List<PrayingCity>
+    suspend fun getAllPrayingCities(): List<PrayingCity>
 
     @Query("SELECT regionId FROM Gebetsorte WHERE city=:city")
     suspend fun getRegionId(city: String): String
