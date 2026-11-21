@@ -164,32 +164,7 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                     views.setViewVisibility(R.id.checkbox_gebetet, View.GONE)
                     appWidgetManager.updateAppWidget(appWidgetId, views)
                 } else {
-                    val prayingIndex = calculatePrayingIndex(geladenePrayingTimes)
-                    views.setTextViewText(R.id.prayer_now_or_next, "Now: ")
-                    views.setTextViewText(R.id.prayer_name, prayingNames.get(prayingIndex))
-                    views.setTextViewText(
-                        R.id.prayer_time,
-                        geladenePrayingTimes.get(prayingIndex + 1) + " - " + geladenePrayingTimes.get(
-                            prayingIndex + 2
-                        )
-                    )
-
-                    // Special case: skip sunrise
-                    if (prayingIndex == 1) {
-                        views.setTextViewText(R.id.prayer_name, prayingNames.get(prayingIndex + 1))
-                        views.setTextViewText(R.id.prayer_now_or_next, "Next: ")
-                        views.setTextViewText(
-                            R.id.prayer_time,
-                            geladenePrayingTimes.get(prayingIndex + 2) + " - " + geladenePrayingTimes.get(
-                                prayingIndex + 3
-                            )
-                        )
-                    }
-
-                    makeTimer(geladenePrayingTimes.get(prayingIndex + 1), context, views, false)
-
                     views = prayedBehavior(context, views)
-
                     // Update widget
                     appWidgetManager.updateAppWidget(appWidgetId, views)
                 }
@@ -372,12 +347,12 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                     LocalTime.parse(prayingTime, DateTimeFormatter.ofPattern("HH:mm"))
                 )
                 if (currentTime < givenPrayingTime && index < 6) {
-                    return index - 1
+                    return index - 1 // returns -1 if it is isha from the day before (i.e. current time: 02:00 and fajr start is 05:00)
                 } else if (index == 6 && currentTime < givenPrayingTimeNextDay) {
                     return index - 1
                 }
             }
-            return -1
+            return -2
         }
 
         suspend fun getPrayingTimesAsJsonString(
@@ -524,6 +499,12 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                         makeTimer(geladenePrayingTimes.get(prayingIndex + 2), context, views, true)
                         views.setViewVisibility(R.id.info_text, View.VISIBLE)
                     }
+                    if (prayingIndex == -1){
+                        views.setTextViewText(R.id.prayer_name, "Fajr")
+                        views.setTextViewText(R.id.prayer_time, geladenePrayingTimes.get(prayingIndex + 1) + " - " + geladenePrayingTimes.get(prayingIndex + 2))
+                        makeTimer(geladenePrayingTimes.get(prayingIndex + 2), context, views, true)
+                        views.setViewVisibility(R.id.info_text, View.VISIBLE)
+                    }
                 } else { // If it is unprayed now
                     // button set to unchcked if it happened because of a timer run out and not from the user
                     views.setCompoundButtonChecked(R.id.checkbox_gebetet, false)
@@ -533,16 +514,22 @@ class GebetszeitenWidgetProvider : AppWidgetProvider() {
                     views.setTextViewText(R.id.prayer_name, prayingNames.get(prayingIndex))
                     views.setTextViewText(R.id.prayer_time, geladenePrayingTimes.get(prayingIndex) + " - " + geladenePrayingTimes.get(prayingIndex + 1))
                     views.setViewVisibility(R.id.info_text, View.INVISIBLE)
-                    // Make timer back to normal, because in the checked case we made a different one than the default one
-                    if (prayingIndex == 5 || prayingIndex == 0) {
-                        makeTimer(geladenePrayingTimes.get(prayingIndex + 1), context, views, false)
-                    }
                     // edge case for when fajr was prayed and the time of fajr ran out. Then we see "Next: Dhuhr"
-                    // And we dont need to change the prayer_time, because it is already set from the prayer time of fajr
                     if (prayingIndex == 1) {
                         views.setTextViewText(R.id.prayer_now_or_next, "Next: ")
                         views.setTextViewText(R.id.prayer_name, prayingNames.get(prayingIndex + 1))
+                        views.setTextViewText(R.id.prayer_time, geladenePrayingTimes.get(prayingIndex + 1) + " - " + geladenePrayingTimes.get(prayingIndex + 2))
                     }
+                    // save isha time so that it can be used after midnight
+                    if (prayingIndex == 5){
+                        sharedPreferences.edit().putString("ishaTime", geladenePrayingTimes.get(prayingIndex) + " - " + geladenePrayingTimes.get(prayingIndex + 1)).apply()
+                    }
+                    // use this for isha after midnight
+                    if (prayingIndex == -1){
+                        views.setTextViewText(R.id.prayer_name, "Isha")
+                        views.setTextViewText(R.id.prayer_time, sharedPreferences.getString("ishaTime", "Loading failed"))
+                    }
+                    makeTimer(geladenePrayingTimes.get(prayingIndex + 1), context, views, false)
                 }
             }
             return views
